@@ -4,7 +4,7 @@ from transformers import AutoModel
 import torch.nn.functional as F
 
 class LiquidTimeLayer(nn.Module):
-    """Liquid Time-constant layer implementation"""
+    """Liquid Time-constant layers implementation"""
     def __init__(self, hidden_size):
         super().__init__()
         self.hidden_size = hidden_size
