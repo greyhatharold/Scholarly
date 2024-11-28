@@ -1,0 +1,33 @@
+{
+  "timestamp": "20241127_202506",
+  "model_config": {
+    "hidden_size": 256,
+    "num_layers": 3,
+    "batch_size": 32
+  },
+  "training_config": {
+    "dataset_size": 1000000,
+    "epochs": 100,
+    "total_samples": 100000000
+  },
+  "estimates": {
+    "n1-standard-4": {
+      "estimated_hours": 2777.78,
+      "cost_per_hour": 0.19,
+      "total_cost": 527.78,
+      "machine_config": "MachineConfig(name='n1-standard-4', cpu_count=4, memory_gb=15, gpu_type=None, gpu_count=0, cost_per_hour=0.19)"
+    },
+    "n1-standard-8-t4": {
+      "estimated_hours": 694.44,
+      "cost_per_hour": 0.54,
+      "total_cost": 375.0,
+      "machine_config": "MachineConfig(name='n1-standard-8-T4', cpu_count=8, memory_gb=30, gpu_type='NVIDIA_TESLA_T4', gpu_count=1, cost_per_hour=0.54)"
+    },
+    "n1-standard-8-v100": {
+      "estimated_hours": 347.22,
+      "cost_per_hour": 2.67,
+      "total_cost": 927.08,
+      "machine_config": "MachineConfig(name='n1-standard-8-V100', cpu_count=8, memory_gb=30, gpu_type='NVIDIA_TESLA_V100', gpu_count=1, cost_per_hour=2.67)"
+    }
+  }
+}

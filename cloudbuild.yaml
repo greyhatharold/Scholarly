@@ -1,0 +1,36 @@
+steps:
+# Build the base training image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', 
+         '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
+         '-f', 'docker/training.Dockerfile',
+         '.']
+
+# Build the serving image  
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build',
+         '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest', 
+         '-f', 'docker/serving.Dockerfile',
+         '.']
+
+# Push training image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/$PROJECT_ID/scholarai-training:latest']
+
+# Push serving image  
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/$PROJECT_ID/scholarai-serving:latest']
+
+# Create Vertex AI model
+- name: 'gcr.io/google-cloud-sdk/gcloud'
+  args:
+  - 'ai'
+  - 'models'
+  - 'upload'
+  - '--region=us-central1' 
+  - '--display-name=scholarai-model'
+  - '--container-image-uri=gcr.io/$PROJECT_ID/scholarai-serving:latest'
+  - '--container-predict-route=/predict'
+  - '--container-health-route=/health'
+
+timeout: 3600s
