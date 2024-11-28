@@ -1,10 +1,7 @@
 from datetime import datetime
-import json
-import io
 import logging
 import requests
 from typing import Dict, List
-from googleapiclient.http import MediaIoBaseUpload
 import numpy as np
 from src.models.scholar_ai import ScholarAI
 from src.data.data_manager import DataManager

@@ -12,14 +12,13 @@ RUN apt-get update && \
 # Add error handling and upgrade pip with verbose output
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install requirements with better error handling and verbose output
+# Install PyTorch dependencies first to ensure correct versions
+RUN pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2
+
+# Then install remaining requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -v || \
-    (pip install --no-cache-dir -r requirements.txt --no-deps && \
-     pip install --no-cache-dir -r requirements.txt) || \
-    (echo "Failed to install requirements" && \
-     cat /root/.cache/pip/log/* && \
-     exit 1)
+RUN pip install --no-cache-dir -r requirements.txt --no-deps && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy source files with verification
 COPY src/ src/
