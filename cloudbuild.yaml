@@ -5,7 +5,6 @@ steps:
          '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
          '-f', 'docker/training.Dockerfile',
          '.']
-  secretEnv: ['GOOGLE_CREDENTIALS']
 
 # Build the serving image  
 - name: 'gcr.io/cloud-builders/docker'
@@ -13,7 +12,6 @@ steps:
          '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest', 
          '-f', 'docker/serving.Dockerfile',
          '.']
-  secretEnv: ['GOOGLE_CREDENTIALS']
 
 # Push training image
 - name: 'gcr.io/cloud-builders/docker'
@@ -34,7 +32,6 @@ steps:
   - '--container-image-uri=gcr.io/${PROJECT_ID}/scholarai-serving:latest'
   - '--container-predict-route=/predict'
   - '--container-health-route=/health'
-  secretEnv: ['GOOGLE_CREDENTIALS']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   args:
