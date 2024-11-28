@@ -59,6 +59,7 @@ steps:
   - '--build-config=cloudbuild.yaml'
   - '--region=${_REGION}'
   - '--service-account=projects/${PROJECT_ID}/serviceAccounts/${_SERVICE_ACCOUNT}'
+  secretEnv: ['GOOGLE_CREDENTIALS']
 
 timeout: 7200s
 
