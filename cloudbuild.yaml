@@ -1,5 +1,5 @@
 steps:
-# Build the base training image with retries
+# Build the base training image with retries (PyTorch 2.5.1)
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', 
          '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
@@ -16,7 +16,7 @@ steps:
   timeout: '1800s'    # Added timeout
   retryable: true     # Added retry capability
 
-# Build the serving image with retries
+# Build the serving image with retries (PyTorch 2.5.1)
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
          '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest', 

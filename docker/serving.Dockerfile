@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime-python3.9
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -12,8 +12,8 @@ RUN apt-get update && \
 # Add error handling and upgrade pip with verbose output
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch dependencies first to ensure correct versions
-RUN pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2
+# Install PyTorch nightly build for Python 3.13 compatibility
+RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
 
 # Then install remaining requirements
 COPY requirements.txt .
