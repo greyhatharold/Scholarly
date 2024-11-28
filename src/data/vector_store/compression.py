@@ -39,24 +39,22 @@ class VectorCompressor:
         return quantized.astype('float32') / scale 
     
     def _reduce_dimensions(self, vectors: np.ndarray) -> np.ndarray:
-        """Reduce vector dimensions using PCA if configured
-        
-        Args:
-            vectors: Input vectors to reduce
-            
-        Returns:
-            Reduced dimension vectors or original vectors if reduction not possible
-        """
+        """Reduce vector dimensions using PCA if configured"""
         try:
             from sklearn.decomposition import PCA
             
-            target_dims = min(vectors.shape[1], self.config.target_dimensions)
+            # Handle single vector case
+            single_vector = len(vectors.shape) == 1 or vectors.shape[0] == 1
+            if single_vector:
+                return vectors.reshape(1, -1)
+            
+            # Use vector store dimensions as target
+            target_dims = min(vectors.shape[1], self.config.dimensions)
             if target_dims >= vectors.shape[1]:
                 return vectors
                 
             pca = PCA(n_components=target_dims)
             return pca.fit_transform(vectors)
         except ImportError:
-            # Fallback gracefully if sklearn not available
             print("Warning: sklearn not available for dimension reduction")
             return vectors

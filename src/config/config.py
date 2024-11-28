@@ -93,12 +93,17 @@ class Config:
         self.integration_steps = 5  # Number of integration steps
         self.solver = 'euler'  # Can be 'euler' or 'rk4'
         
+        # Initialize vector store before embedding config
         self.vector_store = VectorStoreConfig()
-        self.database = DatabaseConfig()
+        # Align vector store dimensions with hidden size
+        self.vector_store.dimensions = self.hidden_size
+        
+        # Initialize embedding config
         self.embedding = EmbeddingConfig()
         self.embedding.target_dims = self.hidden_size
         
-        # Add new training configuration
+        # Rest of the existing initialization
+        self.database = DatabaseConfig()
         self.training = TrainingConfig()
 
     def to_dict(self) -> Dict:
