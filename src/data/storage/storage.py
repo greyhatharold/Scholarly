@@ -174,8 +174,7 @@ class CloudStorage:
                 _, done = downloader.next_chunk()
             
             fh.seek(0)
-            with torch.serialization.safe_globals(['numpy._core.multiarray._reconstruct']):
-                return torch.load(fh, weights_only=False)
+            return torch.load(fh, map_location=torch.device('cpu'), pickle_module=torch.serialization.pickle)
                 
         except Exception as e:
             logger.error(f"Error loading model state: {e}")
