@@ -4,15 +4,29 @@ repos:
     -   id: torch-version-check
         name: PyTorch Version Check
         entry: >-
-            bash -c 'if grep -r "torch==2.0.0\|torch<2.0.1" . --exclude=".pre-commit-config.yaml"; then
-            echo "Error: Found outdated torch versions"; exit 1; fi'
+            bash -c 'if grep -r "torch==[0-1]\|torch<2.0.1\|torch==.*dev" . --exclude=".pre-commit-config.yaml" --exclude-dir={.git,venv,.venv,site-packages}; then
+            echo "Error: Found outdated or dev torch versions"; exit 1; fi'
         language: system
         types: [file]
         exclude: ^\.git/
     -   id: requirements-check
         name: Requirements Version Check
         entry: >-
-            bash -c 'if ! grep -r "torch>=2.0.1" requirements*.txt > /dev/null; then
-            echo "Error: requirements.txt should use torch>=2.0.1"; exit 1; fi'
+            bash -c '
+            if [ ! -f requirements.txt ]; then
+                echo "requirements.txt not found";
+                exit 1;
+            fi;
+            if ! grep -q "^torch==2.0.1" requirements.txt; then
+                echo "Error: requirements.txt should use torch==2.0.1";
+                exit 1;
+            fi'
         language: system
         files: requirements.*\.txt$
+    -   id: torch-dev-check
+        name: Check for PyTorch Dev Versions
+        entry: >-
+            bash -c 'if grep -r "torch==.*dev" . --exclude=".pre-commit-config.yaml" --exclude-dir={.git,venv,.venv,site-packages}; then
+            echo "Error: Found PyTorch dev versions"; exit 1; fi'
+        language: system
+        types: [file]

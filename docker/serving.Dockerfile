@@ -12,8 +12,16 @@ RUN apt-get update && \
 # Add error handling and upgrade pip with verbose output
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch stable version
-RUN pip install torch>=2.0.1 torchvision>=0.15.2 torchaudio>=2.0.2 --index-url https://download.pytorch.org/whl/cpu
+# Add ARG for PyTorch version
+ARG PYTORCH_VERSION=2.0.1
+ARG PYTHON_VERSION=3.10
+
+# Modify PyTorch installation to use specific version
+RUN pip install torch==${PYTORCH_VERSION} \
+    torchvision>=0.15.2 \
+    torchaudio>=2.0.2 \
+    --index-url https://download.pytorch.org/whl/cpu \
+    --no-cache-dir
 
 # Then install remaining requirements
 COPY requirements.txt .

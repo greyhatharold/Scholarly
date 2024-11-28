@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union, AsyncIterator
 import numpy as np
 import io
 import pickle
@@ -288,3 +288,75 @@ class DataManager:
             )
             
         return vector_id
+    async def create_continuous_stream(self) -> AsyncIterator[Dict]:
+        """Creates a continuous stream of diverse information for learning
+        
+        Yields:
+            Dict: Information packet containing vectors and metadata
+        """
+        logger.debug("Initializing continuous data stream")
+        try:
+            while True:
+                # Get current index state for adaptive sampling
+                index_state = self.index.get_state()
+                density_map = self.index.get_density_map() if hasattr(self.index, 'get_density_map') else None
+                
+                # Sample from areas with lower representation
+                sample_weights = self._calculate_sampling_weights(density_map) if density_map else None
+                
+                # Fetch diverse information packet
+                info_packet = await self._fetch_diverse_packet(sample_weights)
+                if info_packet:
+                    yield info_packet
+                
+                await asyncio.sleep(0.1)  # Prevent overwhelming the system
+        except Exception as e:
+            logger.error(f"Error in continuous stream: {e}")
+            raise
+                
+    async def _fetch_diverse_packet(self, sample_weights: Optional[np.ndarray] = None) -> Optional[Dict]:
+        """Fetches diverse information based on current knowledge density
+        
+        Args:
+            sample_weights: Optional weights for biased sampling
+            
+        Returns:
+            Optional[Dict]: Information packet with vectors and metadata
+        """
+        try:
+            # Use existing vector store to inform sampling
+            vectors = await self.storage.load_model_state('vector_index.pkl')
+            if not vectors:
+                return None
+                
+            # Sample based on density weights if available
+            if sample_weights is not None:
+                selected_idx = np.random.choice(
+                    len(vectors), 
+                    p=sample_weights
+                )
+                vector_data = vectors[selected_idx]
+            else:
+                vector_data = np.random.choice(vectors)
+                
+            return {
+                'vectors': vector_data,
+                'timestamp': datetime.now().isoformat(),
+                'sampling_weight': float(sample_weights[selected_idx]) if sample_weights is not None else None
+            }
+        except Exception as e:
+            logger.error(f"Error fetching diverse packet: {e}")
+            return None
+            
+    def _calculate_sampling_weights(self, density_map: np.ndarray) -> np.ndarray:
+        """Calculate sampling weights based on knowledge density
+        
+        Args:
+            density_map: Array representing current knowledge density
+            
+        Returns:
+            np.ndarray: Normalized sampling weights
+        """
+        # Inverse density for sampling (focus on less dense areas)
+        weights = 1 / (density_map + 1e-6)  # Avoid division by zero
+        return weights / weights.sum()

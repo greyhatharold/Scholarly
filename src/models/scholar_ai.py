@@ -8,6 +8,7 @@ import asyncio
 import logging
 from src.data.storage.storage import CloudStorage
 from src.data.data_manager import DataManager
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -301,3 +302,75 @@ class ScholarAI(nn.Module):
         """
         logger.debug(f"Loading model checkpoint version {version}")
         await self.version_manager.load_version(version, model=self)
+    
+    async def process_continuous_stream(self, batch_size: int = 32) -> None:
+        """Process continuous stream of knowledge for adaptive learning
+        
+        Args:
+            batch_size: Number of samples to process in each batch
+        """
+        logger.debug("Starting continuous learning stream")
+        try:
+            async for batch in self._get_knowledge_batches(batch_size):
+                # Process through liquid time layers with adaptive dt
+                encoded = self._prepare_knowledge_tensor(batch)
+                
+                # Compute complexity-based time step
+                complexity = self._estimate_complexity(encoded)
+                dt = self.config.dt * torch.sigmoid(complexity)
+                
+                # Process through liquid layers
+                x = encoded
+                for layer in self.liquid_layers:
+                    x = layer(x, dt)
+                
+                # Update knowledge store with processed information
+                await self.encode_and_store_knowledge({
+                    'tensor': x,
+                    'metadata': batch.get('metadata', {}),
+                    'complexity': complexity.item()
+                })
+                
+        except Exception as e:
+            logger.error(f"Error in continuous learning: {e}")
+            
+    async def _get_knowledge_batches(self, batch_size: int):
+        """Get batches from continuous knowledge stream
+        
+        Args:
+            batch_size: Batch size for processing
+        
+        Yields:
+            Dict: Batch of knowledge data
+        """
+        buffer = []
+        async for info_packet in self.data_manager.create_continuous_stream():
+            buffer.append(info_packet)
+            if len(buffer) >= batch_size:
+                yield {
+                    'data': buffer,
+                    'metadata': {'batch_timestamp': datetime.now().isoformat()}
+                }
+                buffer = []
+    
+    def _estimate_complexity(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Estimate input complexity to adjust processing time
+        
+        Args:
+            tensor: Input tensor
+            
+        Returns:
+            torch.Tensor: Complexity score
+        """
+        # Use gradient magnitudes as complexity proxy
+        with torch.enable_grad():
+            tensor.requires_grad_(True)
+            output = self.knowledge_encoder(tensor)
+            grads = torch.autograd.grad(
+                output.norm(), 
+                tensor,
+                create_graph=True
+            )[0]
+            complexity = grads.norm()
+            tensor.requires_grad_(False)
+        return complexity

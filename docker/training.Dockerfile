@@ -21,13 +21,17 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # Add error handling and upgrade pip with verbose output
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch stable version
-RUN pip install torch>=2.0.1 torchvision>=0.15.2 torchaudio>=2.0.2 --index-url https://download.pytorch.org/whl/cu117
+# Add ARG for PyTorch version
+ARG PYTORCH_VERSION=2.0.1
+ARG PYTHON_VERSION=3.10
 
-# Then install remaining requirements
+# Modify PyTorch installation to use requirements.txt directly
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --no-deps && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt --index-url https://download.pytorch.org/whl/cu117
+
+# Then install remaining requirements (excluding torch packages)
+RUN grep -v "torch" requirements.txt > requirements_no_torch.txt && \
+    pip install --no-cache-dir -r requirements_no_torch.txt
 
 # Copy source files with verification
 COPY src/ src/

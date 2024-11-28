@@ -276,3 +276,106 @@ class GoogleTrainer:
             })
             
         return base_params
+
+    async def prepare_continuous_training(
+        self,
+        version: str,
+        continuous_config: Optional[Dict] = None
+    ) -> str:
+        """Prepares continuous training job with adaptive learning
+        
+        Args:
+            version: Version string for this training run
+            continuous_config: Optional configuration for continuous learning
+            
+        Returns:
+            str: Job name for the continuous training process
+        """
+        logger.debug("Preparing continuous training job")
+        job_name = self._generate_job_name('continuous')
+        
+        # Use pretrain config as base but adjust for continuous learning
+        machine_config = self._get_machine_config('pretrain')
+        hyperparameters = self._get_continuous_hyperparameters(continuous_config)
+        
+        # Create training version record
+        training_version = TrainingVersion(
+            version=version,
+            job_id=job_name,
+            training_phase='continuous',
+            timestamp=datetime.now(),
+            hyperparameters=hyperparameters,
+            machine_config=machine_config
+        )
+        
+        await self._save_training_version(training_version)
+        
+        # Configure continuous training job
+        training_params = {
+            **self._get_base_training_params(machine_config),
+            'hyperparameters': hyperparameters,
+            'scheduling': {
+                'continuous_eval_frequency': 300,  # Every 5 minutes
+                'enable_adaptive_scheduling': True
+            }
+        }
+        
+        job = aiplatform.CustomTrainingJob(
+            display_name=job_name,
+            **training_params
+        )
+        
+        # Start non-blocking continuous training
+        job.run(sync=False)
+        return job_name
+        
+    def _get_continuous_hyperparameters(self, continuous_config: Optional[Dict] = None) -> Dict:
+        """Get hyperparameters optimized for continuous learning
+        
+        Args:
+            continuous_config: Optional custom configuration
+            
+        Returns:
+            Dict: Hyperparameters for continuous learning
+        """
+        base_params = self._get_hyperparameters('pretrain')
+        continuous_params = {
+            # Liquid neural network parameters
+            'dt_min': str(self.config.dt / 10),
+            'dt_max': str(self.config.dt * 10),
+            'adaptive_integration': 'True',
+            
+            # Continuous learning parameters
+            'enable_complexity_tracking': 'True',
+            'min_complexity_threshold': '0.1',
+            'max_complexity_threshold': '10.0',
+            'connection_strength_decay': '0.99',
+            
+            # Stream processing parameters
+            'batch_accumulation_size': '64',
+            'min_update_frequency': '100',
+            'max_update_frequency': '1000'
+        }
+        
+        # Override with custom config if provided
+        if continuous_config:
+            continuous_params.update(continuous_config)
+            
+        return {**base_params, **continuous_params}
+        
+    def _get_base_training_params(self, machine_config: Dict) -> Dict:
+        """Get base training parameters
+        
+        Args:
+            machine_config: Machine configuration dictionary
+            
+        Returns:
+            Dict: Base training parameters
+        """
+        return {
+            'machine_type': machine_config['machine_type'],
+            'accelerator_type': machine_config['accelerator_type'],
+            'accelerator_count': machine_config['accelerator_count'],
+            'replica_count': machine_config['replica_count'],
+            'base_output_dir': f'gs://{self.config.gcp_bucket}/continuous_training'
+        }

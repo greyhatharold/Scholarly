@@ -1,10 +1,12 @@
 from datetime import datetime
 import logging
 import requests
-from typing import Dict, List
+from typing import Dict, List, Optional
 import numpy as np
 from src.models.scholar_ai import ScholarAI
 from src.data.data_manager import DataManager
+import torch
+from src.training.google_trainer import GoogleTrainer
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,12 @@ class SelfLearningManager:
                 if vectors.size > 0:
                     logger.debug(f"Generated vectors with shape: {vectors.shape}")
                     # Store in cloud with metadata
+                    model = ScholarAI(self.config)
+                    await model.initialize()
+                    complexity = model._estimate_complexity(
+                        torch.from_numpy(vectors)
+                    ).item()
+                    
                     metadata = {
                         'topic': topic,
                         'timestamp': datetime.now().isoformat(),
@@ -54,7 +62,9 @@ class SelfLearningManager:
                             .get(next(iter(validated_info.get('wiki_content', {})
                                 .get('query', {})
                                 .get('pages', {}))), {})
-                            .get('extract', '')[:500]  # Store first 500 chars of summary
+                            .get('extract', '')[:500],  # Store first 500 chars of summary
+                        'complexity_score': complexity,
+                        'processing_time': datetime.now().isoformat()
                     }
                     
                     try:
@@ -236,3 +246,35 @@ class SelfLearningManager:
             validated_info['wiki_content'] = sources['wiki_content']
             
         return validated_info
+    
+    async def start_continuous_learning(self, continuous_config: Optional[Dict] = None) -> None:
+        """Start continuous learning process with Google Cloud integration
+        
+        Args:
+            continuous_config: Optional configuration for continuous learning
+        """
+        logger.info("Starting continuous learning process")
+        try:
+            # Initialize model and trainer
+            model = ScholarAI(self.config)
+            await model.initialize()
+            
+            trainer = GoogleTrainer(self.config)
+            
+            # Generate version for continuous learning
+            version = f"continuous-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            
+            # Start continuous training job
+            job_name = await trainer.prepare_continuous_training(
+                version=version,
+                continuous_config=continuous_config
+            )
+            
+            logger.info(f"Started continuous learning job: {job_name}")
+            
+            # Start local continuous processing
+            await model.process_continuous_stream()
+            
+        except Exception as e:
+            logger.error(f"Error in continuous learning: {e}")
+            raise

@@ -114,3 +114,32 @@ class VectorIndex:
             
         if state.get('vectors') is not None:
             self.index = faiss.deserialize_index(state['vectors'])
+    
+    def get_density_map(self) -> np.ndarray:
+        """Calculate density map of current vector space
+        
+        Returns:
+            np.ndarray: Density values across vector space
+        """
+        if not hasattr(self.index, 'ntotal') or self.index.ntotal == 0:
+            return np.ones(1)
+            
+        # Use FAISS index structure to estimate density
+        if isinstance(self.index, faiss.IndexIVFFlat):
+            # Get cluster sizes for IVF index
+            _, cluster_sizes = self.index.get_list_sizes()
+            return np.array(cluster_sizes, dtype=np.float32)
+        else:
+            # For flat index, use simple distance-based density
+            vectors = faiss.vector_to_array(self.index.get_xb())
+            vectors = vectors.reshape(-1, self.config.dimensions)
+            
+            # Compute approximate density using random sampling
+            sample_size = min(1000, vectors.shape[0])
+            if sample_size < vectors.shape[0]:
+                idx = np.random.choice(vectors.shape[0], sample_size, replace=False)
+                vectors = vectors[idx]
+                
+            distances = faiss.pairwise_distances(vectors)
+            density = np.mean(distances, axis=1)
+            return density
