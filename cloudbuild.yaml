@@ -111,12 +111,12 @@ substitutions:
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: 'N1_HIGHCPU_8'
+  machineType: 'E2_MEDIUM'
   requestedVerifyOption: 'NOT_VERIFIED'
   pool:
     name: 'default'
   dynamic_substitutions: true
-  memory: '32GB'
+  memory: '4GB'
 
 availableSecrets:
   secretManager:
