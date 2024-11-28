@@ -15,6 +15,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Install requirements with better error handling and verbose output
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -v || \
+    (pip install --no-cache-dir -r requirements.txt --no-deps && \
+     pip install --no-cache-dir -r requirements.txt) || \
     (echo "Failed to install requirements" && \
      cat /root/.cache/pip/log/* && \
      exit 1)
