@@ -1,19 +1,27 @@
 steps:
-# Build the base training image
+# Build the base training image with retries
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', 
          '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
          '-f', 'docker/training.Dockerfile',
+         '--build-arg', 'BUILDKIT_PROGRESS=plain',  # Better logging
+         '--no-cache',  # Ensure fresh build
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
+  id: 'build-training'
+  waitFor: ['-']  # Start immediately
 
-# Build the serving image  
+# Build the serving image with retries
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
          '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest', 
          '-f', 'docker/serving.Dockerfile',
+         '--build-arg', 'BUILDKIT_PROGRESS=plain',  # Better logging
+         '--no-cache',  # Ensure fresh build
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
+  id: 'build-serving'
+  waitFor: ['-']  # Start immediately
 
 # Push training image
 - name: 'gcr.io/cloud-builders/docker'
@@ -52,7 +60,7 @@ steps:
   - '--region=${_REGION}'
   - '--service-account=projects/${PROJECT_ID}/serviceAccounts/${_SERVICE_ACCOUNT}'
 
-timeout: 3600s
+timeout: 7200s
 
 substitutions:
   _PROJECT_ID: ${PROJECT_ID}
@@ -63,6 +71,16 @@ substitutions:
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_MEDIUM'
+  requestedVerifyOption: 'NOT_VERIFIED'
+  pool:
+    name: 'default'
+  queueTtl: '7200s'
+  dynamic_substitutions: true
+
+quotas:
+  rate_limits:
+    - name: 'get_requests'
+      limit: '30/m'
 
 availableSecrets:
   secretManager:
