@@ -5,20 +5,33 @@ steps:
   args:
     - -c
     - |
-      pip install --no-cache-dir typing_extensions
-      pip install --no-cache-dir \
-        torch==2.0.1+cu117 \
-        torchvision==0.15.2+cu117 \
-        torchaudio==2.0.2+cu117 \
-        --extra-index-url https://download.pytorch.org/whl/cu117
-      pip install -r requirements.txt
+      pip cache purge
+      pip install --no-cache-dir --force-reinstall typing_extensions sympy
+      pip install --no-cache-dir --force-reinstall \
+        torch==2.0.1 \
+        torchvision==0.15.2 \
+        torchaudio==2.0.2 \
+        --index-url https://download.pytorch.org/whl/cu117
+      pip install --no-cache-dir --force-reinstall -r requirements.txt
   id: 'verify-torch'
   timeout: '1800s'
 
-# Update your Docker build steps
+# Debug environment
+- name: 'python:3.10'
+  entrypoint: bash
+  args:
+    - -c
+    - |
+      python --version
+      pip --version
+      pip list
+      env
+  id: 'debug-environment'
+
+# Build steps
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
-         '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
+         '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-training:latest',
          '-f', 'docker/training.Dockerfile',
          '--build-arg', 'PYTORCH_VERSION=2.0.1',
          '--build-arg', 'CUDA_VERSION=11.7',
@@ -28,33 +41,35 @@ steps:
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
   id: 'build-training'
-  waitFor: ['-']  # Start immediately
-  timeout: '1800s'    # Added timeout
-  retryable: true     # Added retry capability
+  waitFor: ['-']
+  timeout: '1800s'
+  retryable: true
 
-# Build the serving image with retries (PyTorch 2.5.1)
+# Build the serving image
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
-         '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest',
+         '--no-cache',
+         '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-serving:latest',
          '-f', 'docker/serving.Dockerfile',
-         '--build-arg', 'PYTORCH_VERSION=2.0.1',  # Pin specific version
+         '--build-arg', 'PYTORCH_VERSION=2.0.1',
+         '--build-arg', 'CUDA_VERSION=117',
          '--build-arg', 'PYTHON_VERSION=3.10',
          '--network=host',
          '--progress=plain',
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
   id: 'build-serving'
-  waitFor: ['-']  # Start immediately
-  timeout: '1800s'    # Added timeout
-  retryable: true     # Added retry capability
+  waitFor: ['-']
+  timeout: '1800s'
+  retryable: true
 
 # Push training image
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'gcr.io/$PROJECT_ID/scholarai-training:latest']
+  args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-training:latest']
 
 # Push serving image
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'gcr.io/$PROJECT_ID/scholarai-serving:latest']
+  args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-serving:latest']
 
 # Create Vertex AI model
 - name: 'gcr.io/google-cloud-sdk/gcloud'
@@ -64,7 +79,7 @@ steps:
   - 'upload'
   - '--region=us-central1'
   - '--display-name=scholarai-model'
-  - '--container-image-uri=gcr.io/${PROJECT_ID}/scholarai-serving:latest'
+  - '--container-image-uri=us-central1-docker.pkg.dev/${PROJECT_ID}/scholarai/scholarai-serving:latest'
   - '--container-predict-route=/predict'
   - '--container-health-route=/health'
   secretEnv: ['GOOGLE_CREDENTIALS']
@@ -96,11 +111,12 @@ substitutions:
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: 'E2_MEDIUM'
+  machineType: 'N1_HIGHCPU_8'
   requestedVerifyOption: 'NOT_VERIFIED'
   pool:
     name: 'default'
   dynamic_substitutions: true
+  memory: '32GB'
 
 availableSecrets:
   secretManager:

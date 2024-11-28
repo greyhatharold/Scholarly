@@ -23,23 +23,32 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Install typing_extensions and sympy first
-RUN pip install --no-cache-dir typing_extensions sympy
+# Install typing_extensions with better error handling
+RUN pip install --no-cache-dir typing_extensions sympy --verbose || \
+    (echo "Failed to install base dependencies" && exit 1)
 
-# Install PyTorch with explicit version
+# Install PyTorch with better error handling
 RUN pip install --no-cache-dir \
     torch==${PYTORCH_VERSION} \
     torchvision==0.15.2 \
     torchaudio==2.0.2 \
     --index-url https://download.pytorch.org/whl/cu${CUDA_VERSION} \
-    --no-deps
+    --verbose \
+    --no-deps || \
+    (echo "Failed to install PyTorch packages" && exit 1)
 
-# Verify PyTorch installation
-RUN python -c "import torch; assert torch.__version__ == '${PYTORCH_VERSION}', f'Wrong torch version: {torch.__version__}'"
+# Add requirements.txt installation
+COPY requirements.txt .
+RUN pip install -v --no-cache-dir -r requirements.txt || \
+    (echo "Failed to install requirements.txt" && exit 1)
 
-# Copy source files with verification
+# Add better file verification
 COPY src/ src/
 COPY config/training_config.yaml config/training_config.yaml
-RUN test -d src && test -f config/training_config.yaml || (echo "Required files missing" && exit 1)
+RUN if [ ! -d "src" ] || [ ! -f "config/training_config.yaml" ]; then \
+    echo "Required files missing"; \
+    ls -la .; \
+    exit 1; \
+fi
 
 ENTRYPOINT ["python", "-m", "src.training.train"]

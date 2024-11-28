@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -16,26 +17,28 @@ from src.data.vector_store.adaptive_store import LiquidTimeStrategy
 logger = logging.getLogger(__name__)
 
 
-class LiquidTimeLayer(nn.Module):
-    """Liquid Time-constant layers implementation"""
+class EnhancedLiquidTimeLayer(nn.Module):
+    """Enhanced Liquid Time-constant layers implementation"""
 
     def __init__(self, hidden_size):
         super().__init__()
         self.hidden_size = hidden_size
-        self.tau_network = nn.Linear(hidden_size, hidden_size)
-        self.update_network = nn.Linear(hidden_size, hidden_size)
-        self.gate_network = nn.Linear(hidden_size, hidden_size)
+        self.learning_rate_network = nn.Linear(hidden_size, hidden_size)
+        self.adaptation_network = nn.Linear(hidden_size, hidden_size)
+        self.meta_memory = nn.GRUCell(hidden_size, hidden_size)
 
-    def forward(self, x, dt):
-        # Compute liquid time constants
-        tau = torch.exp(self.tau_network(x))  # Ensure positive time constants
-        # Compute state update
-        dx = self.update_network(x)
-        # Compute gating mechanism
-        gate = torch.sigmoid(self.gate_network(x))
-        # Apply liquid time-constant update
-        x_new = x + dt * gate * (dx / tau)
-        return x_new
+    def forward(self, x, learning_context):
+        # Compute adaptive learning rate
+        learning_rate = torch.sigmoid(self.learning_rate_network(x))
+
+        # Generate adaptation strategy
+        adaptation = self.adaptation_network(learning_context)
+
+        # Update meta-memory with current learning experience
+        meta_state = self.meta_memory(x, adaptation)
+
+        # Apply adaptive learning
+        return x + learning_rate * meta_state
 
 
 class ScholarAI(nn.Module):
@@ -70,6 +73,11 @@ class ScholarAI(nn.Module):
         # Add temporal dynamics strategy
         self.temporal_strategy = LiquidTimeStrategy(config.vector_store)
         self.current_temporal_stats = {"dt": config.dt}
+
+        # Add meta-optimization components
+        self.meta_optimizer = self._build_meta_optimizer()
+        self.strategy_buffer = collections.deque(maxlen=1000)  # Store successful strategies
+        self.meta_stats = {"successful_strategies": 0, "total_attempts": 0}
 
     async def initialize(self) -> None:
         """Async initialization of model components"""
@@ -110,10 +118,16 @@ class ScholarAI(nn.Module):
     def _init_model_layers(self):
         """Initialize model architecture"""
         logger.debug("Initializing model layers")
-        # Replace standard layers with Liquid Time-constant layers
+        # Replace standard layers with Enhanced Liquid Time-constant layers
         self.liquid_layers = nn.ModuleList(
-            [LiquidTimeLayer(self.config.hidden_size) for _ in range(self.config.num_liquid_layers)]
+            [
+                EnhancedLiquidTimeLayer(self.config.hidden_size)
+                for _ in range(self.config.num_liquid_layers)
+            ]
         )
+
+        # Add learning context buffer
+        self.learning_context = nn.Parameter(torch.zeros(self.config.hidden_size))
 
         # Task-specific layers
         logger.debug("Building task-specific layers")
@@ -150,16 +164,66 @@ class ScholarAI(nn.Module):
             nn.GELU(),
         )
 
+    def _build_meta_optimizer(self):
+        """Build meta-optimization network"""
+        return nn.Sequential(
+            nn.Linear(self.config.hidden_size, self.config.hidden_size),
+            nn.LayerNorm(self.config.hidden_size),
+            nn.GELU(),
+            nn.Linear(self.config.hidden_size, self.config.hidden_size),
+        )
+
     def forward(self, input_ids, attention_mask):
-        """Forward pass through the model"""
-        logger.debug("Performing forward pass")
+        """Forward pass with meta-optimization"""
+        logger.debug("Performing forward pass with meta-optimization")
+
+        # Get base model outputs
         base_outputs = self.base_model(input_ids=input_ids, attention_mask=attention_mask)
 
-        concept_encoded = self.concept_encoder(base_outputs.last_hidden_state)
-        knowledge_encoded = self.knowledge_encoder(concept_encoded)
+        # Generate learning strategy
+        current_strategy = self.meta_optimizer(base_outputs.last_hidden_state)
+
+        # Process through liquid layers with strategy
+        x = self.concept_encoder(base_outputs.last_hidden_state)
+        for layer in self.liquid_layers:
+            # Combine current context with meta-strategy
+            enhanced_context = self._blend_strategy(self.learning_context, current_strategy)
+            x = layer(x, enhanced_context)
+
+        # Complete processing
+        knowledge_encoded = self.knowledge_encoder(x)
         outputs = self.output_layer(knowledge_encoded)
 
+        # Update strategy buffer if successful
+        self._update_strategy_buffer(current_strategy, outputs)
+
         return outputs
+
+    def _blend_strategy(self, context: torch.Tensor, strategy: torch.Tensor) -> torch.Tensor:
+        """Blend learning context with meta-strategy"""
+        alpha = torch.sigmoid(self.meta_optimizer[-1](strategy))  # Adaptive blending weight
+        return alpha * context + (1 - alpha) * strategy
+
+    def _update_strategy_buffer(self, strategy: torch.Tensor, outputs: torch.Tensor):
+        """Update strategy buffer based on success"""
+        self.meta_stats["total_attempts"] += 1
+
+        # Evaluate strategy success (example criteria)
+        success_score = self._evaluate_strategy(outputs)
+        if success_score > self.config.strategy_threshold:
+            self.strategy_buffer.append(
+                {"strategy": strategy.detach(), "score": success_score, "timestamp": datetime.now()}
+            )
+            self.meta_stats["successful_strategies"] += 1
+
+    def _evaluate_strategy(self, outputs: torch.Tensor) -> float:
+        """Evaluate success of current strategy"""
+        # Example evaluation criteria
+        confidence = torch.max(F.softmax(outputs, dim=-1))
+        gradient_norm = torch.norm(
+            torch.autograd.grad(outputs.mean(), self.meta_optimizer[0].weight)[0]
+        )
+        return float(confidence * (1.0 / (1.0 + gradient_norm)))
 
     def encode_knowledge(self, knowledge_data: Dict) -> np.ndarray:
         """Encode knowledge data into vector representations"""
@@ -359,44 +423,43 @@ class ScholarAI(nn.Module):
         await self.version_manager.load_version(version, model=self)
 
     async def process_continuous_stream(self, batch_size: int = 32) -> None:
-        """Process continuous stream of knowledge for adaptive learning
-
-        Args:
-            batch_size: Number of samples to process in each batch
-        """
-        logger.debug("Starting continuous learning stream")
+        logger.debug("Starting continuous learning stream with meta-optimization")
         try:
             async for batch in self._get_knowledge_batches(batch_size):
                 # Get encoded representation
                 encoded = self._prepare_knowledge_tensor(batch)
 
-                # Adapt temporal dynamics
-                temporal_stats = self.temporal_strategy.adapt_dynamics(
-                    encoded.detach().numpy(), self.current_temporal_stats
-                )
+                # Generate meta-strategy
+                meta_strategy = self._generate_meta_strategy(encoded)
 
-                # Update current stats
-                self.current_temporal_stats = temporal_stats
-                dt = torch.tensor(temporal_stats["dt"])
+                # Update learning context with meta-optimization
+                self.learning_context.data = self._update_learning_context(encoded, meta_strategy)
 
-                # Process through liquid layers with adapted dt
+                # Process through enhanced liquid layers
                 x = encoded
                 for layer in self.liquid_layers:
-                    x = layer(x, dt)
+                    x = layer(x, self.learning_context)
 
-                # Store processed information with temporal metadata
+                # Store processed information with meta-learning feedback
                 await self.encode_and_store_knowledge(
                     {
                         "tensor": x,
                         "metadata": {
                             **batch.get("metadata", {}),
-                            "temporal_stats": temporal_stats,
+                            "learning_context": self.learning_context.detach().numpy(),
+                            "meta_strategy": meta_strategy.detach().numpy(),
+                            "meta_stats": self.meta_stats,
                         },
                     }
                 )
 
         except Exception as e:
             logger.error(f"Error in continuous learning: {e}")
+
+    def _update_learning_context(self, encoded, meta_strategy):
+        """Update learning context based on current input"""
+        # Simple moving average update
+        return 0.9 * self.learning_context + 0.1 * torch.mean(encoded, dim=0)
 
     async def _get_knowledge_batches(self, batch_size: int):
         """Get batches from continuous knowledge stream
@@ -434,3 +497,15 @@ class ScholarAI(nn.Module):
             complexity = grads.norm()
             tensor.requires_grad_(False)
         return complexity
+
+    def _generate_meta_strategy(self, encoded: torch.Tensor) -> torch.Tensor:
+        """Generate meta-strategy from successful patterns"""
+        if not self.strategy_buffer:
+            return torch.zeros_like(encoded.mean(0))
+
+        # Blend successful strategies
+        strategies = torch.stack([s["strategy"] for s in self.strategy_buffer])
+        scores = torch.tensor([s["score"] for s in self.strategy_buffer])
+        weights = F.softmax(scores, dim=0)
+
+        return (strategies * weights.unsqueeze(-1)).sum(0)

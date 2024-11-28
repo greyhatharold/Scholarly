@@ -41,6 +41,18 @@ class TemporalDynamicsStrategy(ABC):
         pass
 
 
+class MetaLearningStrategy(ABC):
+    @abstractmethod
+    def learn_pattern(self, query: np.ndarray, results: Dict) -> None:
+        """Learn from successful search patterns"""
+        pass
+
+    @abstractmethod
+    def adapt_search(self, query: np.ndarray) -> Dict:
+        """Adapt search strategy based on learned patterns"""
+        pass
+
+
 # Concrete implementations
 class DynamicCompressionStrategy(CompressionStrategy):
     def __init__(self, config: VectorStoreConfig):
@@ -176,6 +188,92 @@ class LiquidTimeStrategy(TemporalDynamicsStrategy):
         return float(np.clip(new_dt, self.min_dt, self.max_dt))
 
 
+class AdaptiveMetaLearning(MetaLearningStrategy):
+    def __init__(self, config: VectorStoreConfig):
+        self.config = config
+        self.meta_patterns = {}
+        self.pattern_weights = {}
+
+    def learn_pattern(self, query: np.ndarray, results: Dict) -> None:
+        """Learn from successful search results"""
+        try:
+            pattern_signature = self._compute_pattern_signature(query)
+            success_score = self._evaluate_search_success(results)
+
+            if pattern_signature not in self.meta_patterns:
+                self.meta_patterns[pattern_signature] = {
+                    "query_prototype": query.copy(),
+                    "success_count": 0,
+                    "adaptation_weights": np.ones(query.shape[-1]),
+                }
+
+            # Update pattern statistics
+            pattern = self.meta_patterns[pattern_signature]
+            pattern["success_count"] += 1
+            pattern["adaptation_weights"] *= 1 - self.config.learning_rate
+            pattern["adaptation_weights"] += self.config.learning_rate * success_score
+
+        except Exception as e:
+            logger.error(f"Error learning pattern: {e}")
+
+    def adapt_search(self, query: np.ndarray) -> Dict:
+        """Adapt search strategy using learned patterns"""
+        try:
+            similar_patterns = self._find_similar_patterns(query)
+            if not similar_patterns:
+                return {"weights": np.ones_like(query)}
+
+            # Blend successful search strategies
+            adapted_weights = self._blend_strategies(query, similar_patterns)
+            return {"weights": adapted_weights, "pattern_count": len(similar_patterns)}
+
+        except Exception as e:
+            logger.error(f"Error adapting search: {e}")
+            return {"weights": np.ones_like(query)}
+
+    def _compute_pattern_signature(self, query: np.ndarray) -> str:
+        """Compute unique signature for search pattern"""
+        # Use statistical properties for signature
+        stats = [float(np.mean(query)), float(np.std(query)), float(np.median(query))]
+        return ";".join(f"{s:.4f}" for s in stats)
+
+    def _evaluate_search_success(self, results: Dict) -> float:
+        """Evaluate search result success"""
+        if not results:
+            return 0.0
+        # Consider factors like result count, relevance scores
+        relevance_scores = [r.get("distance", 1.0) for r in results]
+        return float(np.mean(relevance_scores))
+
+    def _find_similar_patterns(self, query: np.ndarray) -> List[Dict]:
+        """Find patterns similar to current query"""
+        similar_patterns = []
+        for signature, pattern in self.meta_patterns.items():
+            similarity = self._compute_similarity(query, pattern["query_prototype"])
+            if similarity > self.config.pattern_similarity_threshold:
+                similar_patterns.append({"pattern": pattern, "similarity": similarity})
+        return similar_patterns
+
+    def _blend_strategies(self, query: np.ndarray, patterns: List[Dict]) -> np.ndarray:
+        """Blend multiple search strategies"""
+        if not patterns:
+            return np.ones_like(query)
+
+        weights = np.zeros_like(query)
+        total_similarity = sum(p["similarity"] for p in patterns)
+
+        for pattern_info in patterns:
+            pattern = pattern_info["pattern"]
+            similarity = pattern_info["similarity"]
+            weights += (similarity / total_similarity) * pattern["adaptation_weights"]
+
+        return weights / len(patterns)
+
+    def _compute_similarity(self, query: np.ndarray, prototype: np.ndarray) -> float:
+        """Compute similarity between query and pattern prototype"""
+        return float(np.dot(query, prototype) / (np.linalg.norm(query) * np.linalg.norm(prototype)))
+
+
 class AdaptiveVectorStore:
     """Manages adaptive vector storage with dynamic optimization"""
 
@@ -189,6 +287,7 @@ class AdaptiveVectorStore:
         self.indexing_strategy = AdaptiveIndexingStrategy(self.index)
         self.connection_discovery = PatternBasedConnectionDiscovery()
         self.temporal_dynamics = LiquidTimeStrategy(config)
+        self.meta_learning = AdaptiveMetaLearning(config)
 
         self.connection_strengths = {}  # Track connection strengths
         self.restructure_threshold = 0.8  # Threshold for triggering restructure
@@ -309,3 +408,21 @@ class AdaptiveVectorStore:
 
         except Exception as e:
             logger.error(f"Error strengthening connections: {e}")
+
+    async def learn_from_search(self, query: np.ndarray, results: Dict) -> None:
+        """Learn from successful search results"""
+        try:
+            logger.debug("Learning from search results")
+            self.meta_learning.learn_pattern(query, results)
+        except Exception as e:
+            logger.error(f"Error learning from search: {e}")
+
+    async def adapt_search(self, query: np.ndarray) -> Dict:
+        """Adapt search strategy using learned patterns"""
+        try:
+            logger.debug("Adapting search strategy")
+            adapted_weights = self.meta_learning.adapt_search(query)
+            return adapted_weights
+        except Exception as e:
+            logger.error(f"Error adapting search: {e}")
+            return {"weights": np.ones_like(query)}
