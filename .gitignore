@@ -10,3 +10,6 @@ google-credentials.json
 .venv/
 .venv.*
 .venv
+venv/
+env/
+ENV/
