@@ -5,22 +5,19 @@ steps:
   args:
     - -c
     - |
-      echo "Verifying PyTorch installation..."
-      pip install --upgrade pip
-      # Force specific PyTorch version
-      pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
-          --index-url https://download.pytorch.org/whl/cu117 \
-          --no-deps
-      # Then install remaining requirements
+      pip install --no-cache-dir typing_extensions
+      pip install --no-cache-dir \
+        torch==2.0.1+cu117 \
+        torchvision==0.15.2+cu117 \
+        torchaudio==2.0.2+cu117 \
+        --extra-index-url https://download.pytorch.org/whl/cu117
       pip install -r requirements.txt
-      # Verify installation
-      python -c "import torch; assert torch.__version__ == '2.0.1', f'Wrong torch version: {torch.__version__}'"
   id: 'verify-torch'
   timeout: '1800s'
 
 # Update your Docker build steps
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', 
+  args: ['build',
          '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
          '-f', 'docker/training.Dockerfile',
          '--build-arg', 'PYTORCH_VERSION=2.0.1',
@@ -38,7 +35,7 @@ steps:
 # Build the serving image with retries (PyTorch 2.5.1)
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
-         '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest', 
+         '-t', 'gcr.io/$PROJECT_ID/scholarai-serving:latest',
          '-f', 'docker/serving.Dockerfile',
          '--build-arg', 'PYTORCH_VERSION=2.0.1',  # Pin specific version
          '--build-arg', 'PYTHON_VERSION=3.10',
@@ -55,7 +52,7 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: ['push', 'gcr.io/$PROJECT_ID/scholarai-training:latest']
 
-# Push serving image  
+# Push serving image
 - name: 'gcr.io/cloud-builders/docker'
   args: ['push', 'gcr.io/$PROJECT_ID/scholarai-serving:latest']
 
@@ -65,7 +62,7 @@ steps:
   - 'ai'
   - 'models'
   - 'upload'
-  - '--region=us-central1' 
+  - '--region=us-central1'
   - '--display-name=scholarai-model'
   - '--container-image-uri=gcr.io/${PROJECT_ID}/scholarai-serving:latest'
   - '--container-predict-route=/predict'

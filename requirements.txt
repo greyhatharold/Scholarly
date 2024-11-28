@@ -68,9 +68,11 @@ soupsieve==2.6
 sympy==1.13.3
 threadpoolctl==3.5.0
 tokenizers==0.20.3
-torch==2.0.1+cu117
-torchvision==0.15.2+cu117
-torchaudio==2.0.2+cu117
+
+# PyTorch CPU-only versions
+torch==2.0.1
+torchvision==0.15.2
+torchaudio==2.0.2
 tqdm==4.67.1
 transformers==4.46.3
 typing_extensions==4.12.2
