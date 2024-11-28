@@ -74,9 +74,9 @@ options:
   requestedVerifyOption: 'NOT_VERIFIED'
   pool:
     name: 'default'
-  queueTtl: '7200s'
   dynamic_substitutions: true
 
+# Rate limiting through quota configuration
 quotas:
   rate_limits:
     - name: 'get_requests'
