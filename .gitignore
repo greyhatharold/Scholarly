@@ -6,3 +6,4 @@ __pycache__/
 credentials.json
 google-credentials.json
 service-account.json
+google-credentials.json
