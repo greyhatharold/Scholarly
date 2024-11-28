@@ -16,7 +16,6 @@ class LiquidTimeLayer(nn.Module):
     def __init__(self, hidden_size):
         super().__init__()
         self.hidden_size = hidden_size
-        # Time-constant networks
         self.tau_network = nn.Linear(hidden_size, hidden_size)
         self.update_network = nn.Linear(hidden_size, hidden_size)
         self.gate_network = nn.Linear(hidden_size, hidden_size)
