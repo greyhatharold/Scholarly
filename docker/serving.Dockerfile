@@ -23,6 +23,9 @@ RUN pip install torch==${PYTORCH_VERSION} \
     --index-url https://download.pytorch.org/whl/cpu \
     --no-cache-dir
 
+# Add version verification
+RUN python -c "import torch; assert torch.__version__ == '${PYTORCH_VERSION}', f'Wrong torch version: {torch.__version__}'"
+
 # Then install remaining requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

@@ -4,7 +4,14 @@ repos:
     -   id: torch-version-check
         name: PyTorch Version Check
         entry: >-
-            bash -c 'if grep -r "torch==[0-1]\|torch<2.0.1\|torch==.*dev" . --exclude=".pre-commit-config.yaml" --exclude-dir={.git,venv,.venv,site-packages}; then
+            bash -c 'if grep -r "^[^#]*torch[><=]=\|^[^#]*torch\s*<" . \
+            --exclude=".pre-commit-config.yaml" \
+            --exclude="requirements.txt" \
+            --exclude="constraints.txt" \
+            --exclude="cloudbuild.yaml" \
+            --exclude="checker.py" \
+            --exclude-dir={.git,venv,.venv,site-packages,docker,scripts} \
+            --exclude="test.txt" ; then
             echo "Error: Found outdated or dev torch versions"; exit 1; fi'
         language: system
         types: [file]

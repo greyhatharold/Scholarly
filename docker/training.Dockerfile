@@ -1,35 +1,41 @@
 FROM nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
 
+# Add build args
+ARG PYTORCH_VERSION=2.0.1
+ARG CUDA_VERSION=11.7
+ARG PYTHON_VERSION=3.10
+
 WORKDIR /app
 
-# Install Python 3.10 and system dependencies
+# Install Python and dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common \
     build-essential \
     curl \
-    python3.10 \
-    python3.10-dev \
-    python3.10-venv \
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-dev \
+    python${PYTHON_VERSION}-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up Python environment
 ENV VIRTUAL_ENV=/opt/venv
-RUN python3.10 -m venv $VIRTUAL_ENV
+RUN python${PYTHON_VERSION} -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Add error handling and upgrade pip with verbose output
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Install PyTorch first with explicit version
+RUN pip install --no-cache-dir \
+    torch==${PYTORCH_VERSION} \
+    torchvision==0.15.2 \
+    torchaudio==2.0.2 \
+    --index-url https://download.pytorch.org/whl/cu${CUDA_VERSION//./} \
+    --no-deps
 
-# Add ARG for PyTorch version
-ARG PYTORCH_VERSION=2.0.1
-ARG PYTHON_VERSION=3.10
+# Verify PyTorch installation
+RUN python -c "import torch; assert torch.__version__ == '${PYTORCH_VERSION}', f'Wrong torch version: {torch.__version__}'"
 
-# Modify PyTorch installation to use requirements.txt directly
+# Then install remaining requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --index-url https://download.pytorch.org/whl/cu117
-
-# Then install remaining requirements (excluding torch packages)
 RUN grep -v "torch" requirements.txt > requirements_no_torch.txt && \
     pip install --no-cache-dir -r requirements_no_torch.txt
 

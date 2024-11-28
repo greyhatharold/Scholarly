@@ -9,6 +9,7 @@ import logging
 from src.data.storage.storage import CloudStorage
 from src.data.data_manager import DataManager
 from datetime import datetime
+from src.data.vector_store.adaptive_store import LiquidTimeStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,10 @@ class ScholarAI(nn.Module):
         
         # Initialize version manager
         self._init_model_layers()
+        
+        # Add temporal dynamics strategy
+        self.temporal_strategy = LiquidTimeStrategy(config.vector_store)
+        self.current_temporal_stats = {'dt': config.dt}
     
     async def initialize(self) -> None:
         """Async initialization of model components"""
@@ -312,23 +317,31 @@ class ScholarAI(nn.Module):
         logger.debug("Starting continuous learning stream")
         try:
             async for batch in self._get_knowledge_batches(batch_size):
-                # Process through liquid time layers with adaptive dt
+                # Get encoded representation
                 encoded = self._prepare_knowledge_tensor(batch)
                 
-                # Compute complexity-based time step
-                complexity = self._estimate_complexity(encoded)
-                dt = self.config.dt * torch.sigmoid(complexity)
+                # Adapt temporal dynamics
+                temporal_stats = self.temporal_strategy.adapt_dynamics(
+                    encoded.detach().numpy(),
+                    self.current_temporal_stats
+                )
                 
-                # Process through liquid layers
+                # Update current stats
+                self.current_temporal_stats = temporal_stats
+                dt = torch.tensor(temporal_stats['dt'])
+                
+                # Process through liquid layers with adapted dt
                 x = encoded
                 for layer in self.liquid_layers:
                     x = layer(x, dt)
                 
-                # Update knowledge store with processed information
+                # Store processed information with temporal metadata
                 await self.encode_and_store_knowledge({
                     'tensor': x,
-                    'metadata': batch.get('metadata', {}),
-                    'complexity': complexity.item()
+                    'metadata': {
+                        **batch.get('metadata', {}),
+                        'temporal_stats': temporal_stats
+                    }
                 })
                 
         except Exception as e:

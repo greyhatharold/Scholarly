@@ -13,6 +13,24 @@ class VectorStoreConfig:
     compression_level: int = 9
     use_dimensionality_reduction: bool = True
     target_dimensions: int = 64
+    
+    # Adaptive parameters
+    min_compression_level: int = 1
+    max_compression_level: int = 9
+    min_quantization_bits: int = 4
+    max_quantization_bits: int = 16
+    min_clusters: int = 10
+    max_clusters: int = 1000
+    min_probes: int = 1
+    max_probes: int = 20
+    target_latency: float = 0.1
+    similarity_threshold: float = 0.8
+    
+    # Temporal dynamics parameters
+    dt: float = 0.1
+    min_dt: float = 0.01
+    max_dt: float = 1.0
+    temporal_adaptation_rate: float = 0.1
 
 @dataclass
 class DatabaseConfig:

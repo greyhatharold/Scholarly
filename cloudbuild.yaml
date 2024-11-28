@@ -1,37 +1,30 @@
 steps:
-# Add this step before your Docker builds
+# Add version verification step
 - name: 'python:3.10'
   entrypoint: bash
   args:
     - -c
     - |
-      python --version
+      echo "Verifying PyTorch installation..."
       pip install --upgrade pip
-      pip install pip-tools
-      pip freeze
-      pip install -r requirements.txt --verbose
-  id: 'debug-deps'
-  timeout: '1800s'
-
-# Add this step before your Docker builds
-- name: 'python:3.10'
-  entrypoint: bash
-  args:
-    - -c
-    - |
-      pip install pip-tools
-      pip-compile requirements.txt --upgrade-package "torch>=2.0.1" --allow-unsafe
-      pip install -r requirements.txt --no-deps
+      # Force specific PyTorch version
+      pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
+          --index-url https://download.pytorch.org/whl/cu117 \
+          --no-deps
+      # Then install remaining requirements
       pip install -r requirements.txt
-  id: 'verify-deps'
+      # Verify installation
+      python -c "import torch; assert torch.__version__ == '2.0.1', f'Wrong torch version: {torch.__version__}'"
+  id: 'verify-torch'
   timeout: '1800s'
 
-# Build the base training image with retries (PyTorch 2.5.1)
+# Update your Docker build steps
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', 
          '-t', 'gcr.io/$PROJECT_ID/scholarai-training:latest',
          '-f', 'docker/training.Dockerfile',
-         '--build-arg', 'PYTORCH_VERSION=2.0.1',  # Pin specific version
+         '--build-arg', 'PYTORCH_VERSION=2.0.1',
+         '--build-arg', 'CUDA_VERSION=11.7',
          '--build-arg', 'PYTHON_VERSION=3.10',
          '--network=host',
          '--progress=plain',

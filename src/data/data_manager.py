@@ -14,6 +14,8 @@ import os
 import logging
 from datetime import datetime
 from src.data.versioning.model_version_manager import ModelVersionManager
+from src.data.database.models import VectorStoreState
+from src.data.vector_store.adaptive_store import AdaptiveVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +28,6 @@ class DataManager:
         self.compressor = VectorCompressor(config.vector_store)
         self.index = VectorIndex(config.vector_store)
         self.version_registry = {}  # Track vector store versions
-        
-        # Add version manager integration
         self.version_manager = ModelVersionManager(config)
         asyncio.create_task(self.version_manager.initialize())
         
@@ -360,3 +360,54 @@ class DataManager:
         # Inverse density for sampling (focus on less dense areas)
         weights = 1 / (density_map + 1e-6)  # Avoid division by zero
         return weights / weights.sum()
+
+    async def initialize_adaptive_store(self):
+        """Initialize adaptive vector store with existing data"""
+        try:
+            # Load existing state if available
+            state = await self.storage.load_model_state('vector_store_state.pkl')
+            if state:
+                self.vector_store = AdaptiveVectorStore(self.config.vector_store)
+                self.vector_store.load_state(state)
+            else:
+                self.vector_store = AdaptiveVectorStore(self.config.vector_store)
+                
+        except Exception as e:
+            logger.error(f"Error initializing adaptive store: {e}")
+            self.vector_store = AdaptiveVectorStore(self.config.vector_store)
+
+    async def process_vectors(self, vectors: np.ndarray, metadata: Optional[Dict] = None):
+        """Process vectors using adaptive store"""
+        try:
+            # Get current system stats for adaptation
+            query_patterns = await self._get_query_patterns()
+            
+            # Process through adaptive store
+            result = await self.vector_store.process_new_information(
+                vectors,
+                patterns=query_patterns
+            )
+            
+            # Save updated state
+            state = VectorStoreState.from_adaptive_store(
+                self.vector_store,
+                version_id=len(self.version_registry)
+            )
+            await self.storage.save_model_state(
+                state.__dict__,
+                'vector_store_state.pkl'
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error processing vectors: {e}")
+            raise
+
+    async def _get_query_patterns(self) -> Dict:
+        """Get query patterns for adaptive optimization"""
+        try:
+            patterns = await self.storage.load_model_state('query_patterns.json')
+            return patterns or {}
+        except FileNotFoundError:
+            return {}
