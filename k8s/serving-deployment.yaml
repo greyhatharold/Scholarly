@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: serving
-        image: us-central1-docker.pkg.dev/${PROJECT_ID}/scholarai/scholarai-serving:latest
+        image: us-west1-docker.pkg.dev/${PROJECT_ID}/scholarai/scholarai-serving:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

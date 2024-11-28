@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+FROM us-west1-docker.pkg.dev/cloud-marketplace/google/nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
 
 # Add build args
 ARG PYTORCH_VERSION=2.0.1

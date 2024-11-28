@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM us-west1-docker.pkg.dev/cloud-marketplace/google/python:3.10-slim
 
 WORKDIR /app
 

@@ -9,6 +9,7 @@ data:
         machineType: e2-standard-8
         acceleratorType: NVIDIA_TESLA_T4
         acceleratorCount: 1
+        zone: us-west1-a
       replicaCount: 1
       containerSpec:
         args:

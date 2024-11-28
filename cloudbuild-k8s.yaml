@@ -2,7 +2,7 @@ steps:
 # Build training image
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
-         '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-training:latest',
+         '-t', 'us-west1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-training:latest',
          '-f', 'docker/training.Dockerfile',
          '--build-arg', 'PYTORCH_VERSION=2.0.1',
          '--build-arg', 'CUDA_VERSION=117',
@@ -14,7 +14,7 @@ steps:
 # Build serving image
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build',
-         '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-serving:latest',
+         '-t', 'us-west1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-serving:latest',
          '-f', 'docker/serving.Dockerfile',
          '--build-arg', 'PYTORCH_VERSION=2.0.1',
          '--build-arg', 'PYTHON_VERSION=3.10',
@@ -24,14 +24,14 @@ steps:
 
 # Push images
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-training:latest']
+  args: ['push', 'us-west1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-training:latest']
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-serving:latest']
+  args: ['push', 'us-west1-docker.pkg.dev/$PROJECT_ID/scholarai/scholarai-serving:latest']
 
 # Get GKE credentials
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: 'gcloud'
-  args: ['container', 'clusters', 'get-credentials', 'scholarai-cluster', '--zone', 'us-central1-a']
+  args: ['container', 'clusters', 'get-credentials', 'scholarai-cluster', '--zone', 'us-west1-a']
 
 # Deploy to GKE
 - name: 'gcr.io/cloud-builders/kubectl'
