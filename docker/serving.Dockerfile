@@ -13,7 +13,7 @@ RUN apt-get update && \
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install PyTorch stable version
-RUN pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install torch>=2.0.1 torchvision>=0.15.2 torchaudio>=2.0.2 --index-url https://download.pytorch.org/whl/cpu
 
 # Then install remaining requirements
 COPY requirements.txt .

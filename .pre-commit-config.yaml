@@ -1,0 +1,18 @@
+repos:
+-   repo: local
+    hooks:
+    -   id: torch-version-check
+        name: PyTorch Version Check
+        entry: >-
+            bash -c 'if grep -r "torch==2.0.0\|torch<2.0.1" . --exclude=".pre-commit-config.yaml"; then
+            echo "Error: Found outdated torch versions"; exit 1; fi'
+        language: system
+        types: [file]
+        exclude: ^\.git/
+    -   id: requirements-check
+        name: Requirements Version Check
+        entry: >-
+            bash -c 'if ! grep -r "torch>=2.0.1" requirements*.txt > /dev/null; then
+            echo "Error: requirements.txt should use torch>=2.0.1"; exit 1; fi'
+        language: system
+        files: requirements.*\.txt$

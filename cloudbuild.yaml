@@ -9,6 +9,8 @@ steps:
          '--network=host',  # Added for better network stability
          '--memory=4g',     # Added resource limits
          '--cpu-quota=100000',
+         '--build-arg', 'DOCKER_BUILDKIT=1',
+         '--progress=plain',
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
   id: 'build-training'
@@ -26,6 +28,8 @@ steps:
          '--network=host',  # Added for better network stability
          '--memory=4g',     # Added resource limits
          '--cpu-quota=100000',
+         '--build-arg', 'DOCKER_BUILDKIT=1',
+         '--progress=plain',
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
   id: 'build-serving'
