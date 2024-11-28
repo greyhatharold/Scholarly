@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: scholarai-serving
+spec:
+  selector:
+    app: scholarai-serving
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: LoadBalancer

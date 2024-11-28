@@ -1,0 +1,14 @@
+apiVersion: skaffold/v2beta29
+kind: Config
+build:
+  artifacts:
+  - image: scholarai-training
+    docker:
+      dockerfile: docker/training.Dockerfile
+  - image: scholarai-serving
+    docker:
+      dockerfile: docker/serving.Dockerfile
+deploy:
+  kubectl:
+    manifests:
+    - k8s/*.yaml

@@ -37,6 +37,9 @@ RUN pip install --no-cache-dir \
     --no-deps || \
     (echo "Failed to install PyTorch packages" && exit 1)
 
+# Add version verification to match serving.Dockerfile
+RUN python -c "import torch; assert torch.__version__.startswith('${PYTORCH_VERSION}'), f'Wrong torch version: {torch.__version__}'"
+
 # Add requirements.txt installation
 COPY requirements.txt .
 RUN pip install -v --no-cache-dir -r requirements.txt || \
@@ -51,4 +54,18 @@ RUN if [ ! -d "src" ] || [ ! -f "config/training_config.yaml" ]; then \
     exit 1; \
 fi
 
+# Add Kubernetes health check endpoint
+COPY src/ src/
+COPY config/training_config.yaml config/training_config.yaml
+
+# Add health check endpoint for k8s
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8085/health || exit 1
+
+EXPOSE 8085
+
 ENTRYPOINT ["python", "-m", "src.training.train"]
+
+ENV PORT=8085
+ENV PYTHONUNBUFFERED=1
+ENV GOOGLE_CLOUD_PROJECT=${PROJECT_ID}

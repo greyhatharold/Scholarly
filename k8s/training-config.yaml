@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: training-config
+data:
+  training_config.yaml: |
+    workerPoolSpecs:
+      machineSpec:
+        machineType: n1-standard-8
+        acceleratorType: NVIDIA_TESLA_T4
+        acceleratorCount: 1
+      replicaCount: 1
+      containerSpec:
+        args:
+          - "--mode=train"
+          - "--epochs=10"
+          - "--batch_size=128"
+          - "--learning_rate=1e-4"

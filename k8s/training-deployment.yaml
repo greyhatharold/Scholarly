@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scholarai-training
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scholarai-training
+  template:
+    metadata:
+      labels:
+        app: scholarai-training
+    spec:
+      containers:
+      - name: training
+        image: us-central1-docker.pkg.dev/${PROJECT_ID}/scholarai/scholarai-training:latest
+        ports:
+        - containerPort: 8085
+        env:
+        - name: PROJECT_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8085
+          initialDelaySeconds: 5
+          periodSeconds: 10

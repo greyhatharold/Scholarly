@@ -20,7 +20,7 @@ ARG PYTHON_VERSION=3.10
 RUN pip install --no-cache-dir typing_extensions sympy --verbose || \
     (echo "Failed to install base dependencies" && exit 1)
 
-# Modify PyTorch installation with better error messages
+# Install PyTorch with better error handling
 RUN pip install --no-cache-dir \
     torch==${PYTORCH_VERSION} \
     torchvision==0.15.2 \
@@ -29,8 +29,8 @@ RUN pip install --no-cache-dir \
     --verbose || \
     (echo "Failed to install PyTorch packages" && exit 1)
 
-# Add version verification
-RUN python -c "import torch; assert torch.__version__ == '${PYTORCH_VERSION}', f'Wrong torch version: {torch.__version__}'"
+# Modify version verification to handle CPU suffix
+RUN python -c "import torch; assert torch.__version__.startswith('${PYTORCH_VERSION}'), f'Wrong torch version: {torch.__version__}'"
 
 # Then install remaining requirements with verbose output
 COPY requirements.txt .
@@ -53,3 +53,7 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 EXPOSE 8080
 
 ENTRYPOINT ["python", "-m", "src.serving.serve"]
+
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+ENV GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
