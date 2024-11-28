@@ -29,8 +29,28 @@ steps:
   - 'upload'
   - '--region=us-central1' 
   - '--display-name=scholarai-model'
-  - '--container-image-uri=gcr.io/$PROJECT_ID/scholarai-serving:latest'
+  - '--container-image-uri=gcr.io/${PROJECT_ID}/scholarai-serving:latest'
   - '--container-predict-route=/predict'
   - '--container-health-route=/health'
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  args:
+  - 'beta'
+  - 'builds'
+  - 'triggers'
+  - 'create'
+  - 'github'
+  - '--name=scholarly-trigger'
+  - '--repo-owner=${REPO_OWNER}'
+  - '--repo-name=Scholarly'
+  - '--branch-pattern=^main$'
+  - '--build-config=cloudbuild.yaml'
+
 timeout: 3600s
+
+substitutions:
+  _PROJECT_ID: ${PROJECT_ID}
+  _REPO_OWNER: ${REPO_OWNER}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

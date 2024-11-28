@@ -6,6 +6,9 @@ workerPoolSpecs:
   replicaCount: 1
   containerSpec:
     imageUri: gcr.io/${PROJECT_ID}/scholarai-training:latest
+    env:
+      - name: PROJECT_ID
+        value: ${PROJECT_ID}
     args:
       - "--mode=train"
       - "--epochs=10"
