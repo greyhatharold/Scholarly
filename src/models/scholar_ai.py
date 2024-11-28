@@ -56,8 +56,7 @@ class ScholarAI(nn.Module):
         logger.debug("Initializing data manager")
         self.data_manager = DataManager(config)
         
-        # Initialize the rest of the model
-        logger.debug("Initializing model layers")
+        # Initialize version manager
         self._init_model_layers()
     
     async def initialize(self) -> None:
@@ -277,3 +276,28 @@ class ScholarAI(nn.Module):
         results = await self.data_manager.search_similar(query_vector, k)
         logger.info(f"Found {len(results)} similar knowledge entries")
         return results
+    
+    async def save_checkpoint(self, version: str, metadata: Dict, metrics: Optional[Dict] = None):
+        """Save a versioned checkpoint of the model
+        
+        Args:
+            version: Version string (e.g. "1.0.0")
+            metadata: Version metadata
+            metrics: Optional performance metrics
+        """
+        logger.debug(f"Saving model checkpoint version {version}")
+        await self.version_manager.save_version(
+            model=self,
+            version=version,
+            metadata=metadata,
+            metrics=metrics
+        )
+
+    async def load_checkpoint(self, version: str):
+        """Load a specific model version
+        
+        Args:
+            version: Version string to load
+        """
+        logger.debug(f"Loading model checkpoint version {version}")
+        await self.version_manager.load_version(version, model=self)

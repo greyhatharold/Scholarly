@@ -1,28 +1,66 @@
 from google.cloud import aiplatform
 from datetime import datetime
 import os
-from typing import Dict, Literal
+from typing import Dict, Literal, Optional
+import logging
+from dataclasses import dataclass
+from .deployment_manager import DeploymentManager, ModelValidator, DeploymentMonitor
+from src.data.versioning.model_version_manager import ModelVersionManager
+import asyncio
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class TrainingVersion:
+    """Represents a training job version"""
+    version: str
+    job_id: str
+    training_phase: str
+    timestamp: datetime
+    hyperparameters: Dict
+    machine_config: Dict
+    metrics: Optional[Dict] = None
 
 class GoogleTrainer:
     """Handles model training on Google Cloud infrastructure"""
     def __init__(self, config):
         self.config = config
-        # Initialize Vertex AI with project and location
+        self.version_manager = ModelVersionManager(config)
         aiplatform.init(
             project=os.environ.get('GOOGLE_CLOUD_PROJECT'),
             location=os.environ.get('GOOGLE_CLOUD_REGION', 'us-central1')
         )
         self.container_registry = os.environ.get('GOOGLE_CONTAINER_REGISTRY')
+        asyncio.create_task(self.version_manager.initialize())
         
-    async def prepare_training_job(self, training_phase: Literal['pretrain', 'finetune']) -> str:
-        """Prepares and launches a Vertex AI training job with custom container
+    async def prepare_training_job(
+        self,
+        training_phase: Literal['pretrain', 'finetune'],
+        version: str
+    ) -> str:
+        """Prepares and launches a Vertex AI training job with version tracking
 
         Args:
             training_phase: Phase of training ('pretrain' or 'finetune')
+            version: Version string for this training run
         """
         job_name = self._generate_job_name(training_phase)
         machine_config = self._get_machine_config(training_phase)
         container_uri = await self._prepare_container_image(training_phase)
+        hyperparameters = self._get_hyperparameters(training_phase)
+        
+        # Create training version record
+        training_version = TrainingVersion(
+            version=version,
+            job_id=job_name,
+            training_phase=training_phase,
+            timestamp=datetime.now(),
+            hyperparameters=hyperparameters,
+            machine_config=machine_config
+        )
+        
+        # Save training version metadata
+        await self._save_training_version(training_version)
         
         training_params = {
             'container_uri': container_uri,
@@ -31,8 +69,8 @@ class GoogleTrainer:
             'accelerator_type': machine_config['accelerator_type'],
             'accelerator_count': machine_config['accelerator_count'],
             'replica_count': machine_config['replica_count'],
-            'base_output_dir': f'gs://{self.config.gcp_bucket}/training_output/{training_phase}',
-            'hyperparameters': self._get_hyperparameters(training_phase)
+            'base_output_dir': f'gs://{self.config.gcp_bucket}/training_output/{training_phase}/{version}',
+            'hyperparameters': hyperparameters
         }
         
         job = aiplatform.CustomTrainingJob(
@@ -41,6 +79,139 @@ class GoogleTrainer:
         )
         job.run(sync=False)
         return job_name
+
+    async def _save_training_version(self, training_version: TrainingVersion):
+        """Save training version metadata"""
+        metadata = {
+            'job_id': training_version.job_id,
+            'training_phase': training_version.training_phase,
+            'timestamp': training_version.timestamp.isoformat(),
+            'hyperparameters': training_version.hyperparameters,
+            'machine_config': training_version.machine_config,
+            'metrics': training_version.metrics
+        }
+        
+        await self.version_manager.save_version(
+            model=None,  # No model state yet
+            version=training_version.version,
+            metadata=metadata
+        )
+
+    async def update_training_metrics(self, version: str, metrics: Dict):
+        """Update version with training metrics"""
+        version_info = await self.version_manager.get_version(version)
+        if version_info:
+            version_info.metrics = metrics
+            await self.version_manager.save_version(
+                model=None,
+                version=version,
+                metadata=version_info.metadata,
+                metrics=metrics
+            )
+
+    async def automated_deployment(
+        self, 
+        version: str,
+        approve_deployment: bool = False,
+        deployment_config: Optional[Dict] = None
+    ) -> str:
+        """Handle automated model deployment with version tracking and approval
+
+        Args:
+            version: Version string to deploy
+            approve_deployment: Explicit deployment approval flag
+            deployment_config: Optional custom deployment configuration
+        
+        Raises:
+            ValueError: If deployment not approved or version not found
+            RuntimeError: If deployment fails
+        """
+        if not approve_deployment:
+            raise ValueError(
+                "Deployment requires explicit approval. "
+                "Set approve_deployment=True to proceed."
+            )
+
+        try:
+            # Initialize deployment components
+            validator = ModelValidator(self.config)
+            monitor = DeploymentMonitor(self.config)
+            deployment_manager = DeploymentManager(
+                self.config,
+                validator,
+                monitor,
+                require_approval=True
+            )
+            
+            # Get model artifacts for specific version
+            model_artifacts = await self._get_version_artifacts(version)
+            
+            # Add deployment approval metadata
+            deployment_metadata = {
+                'approved_at': datetime.now().isoformat(),
+                'approved_by': os.environ.get('DEPLOYMENT_USER', 'unknown'),
+                'deployment_config': deployment_config or {}
+            }
+            
+            # Deploy model with approval metadata
+            deployment_id = await deployment_manager.deploy_model(
+                model_artifacts,
+                deployment_metadata=deployment_metadata
+            )
+            
+            # Update version metadata with deployment info
+            await self._update_deployment_info(
+                version, 
+                deployment_id,
+                deployment_metadata
+            )
+            
+            logger.info(f"Successfully deployed approved model version {version}: {deployment_id}")
+            return deployment_id
+            
+        except Exception as e:
+            logger.error(f"Automated deployment failed for version {version}: {e}")
+            raise
+
+    async def _get_version_artifacts(self, version: str) -> Dict:
+        """Get artifacts for specific model version"""
+        version_info = await self.version_manager.get_version(version)
+        if not version_info:
+            raise ValueError(f"Version {version} not found")
+            
+        # Get artifacts from versioned storage
+        artifacts = {
+            'model_path': f"gs://{self.config.gcp_bucket}/models/v{version}",
+            'metadata': version_info.metadata,
+            'metrics': version_info.metrics,
+            'serving_image': await self._get_serving_image(version)
+        }
+        return artifacts
+
+    async def _update_deployment_info(
+        self, 
+        version: str, 
+        deployment_id: str,
+        deployment_metadata: Dict
+    ):
+        """Update version metadata with deployment information"""
+        version_info = await self.version_manager.get_version(version)
+        if version_info:
+            metadata = {
+                **version_info.metadata,
+                'deployment': {
+                    'id': deployment_id,
+                    'timestamp': datetime.now().isoformat(),
+                    'status': 'deployed',
+                    **deployment_metadata
+                }
+            }
+            await self.version_manager.save_version(
+                model=None,
+                version=version,
+                metadata=metadata,
+                metrics=version_info.metrics
+            )
 
     def _generate_job_name(self, training_phase: str) -> str:
         """Generates a unique training job name"""

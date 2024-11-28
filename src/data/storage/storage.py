@@ -3,10 +3,12 @@ import os
 import io
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from datetime import datetime
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -95,26 +97,17 @@ class CloudStorage:
         return None
         
     async def save_model_state(self, state_dict, filename: str):
-        """Save model state to Google Drive
-        
-        Args:
-            state_dict: Model state to save (dict or model instance)
-            filename: Name of file to save state to
-        """
+        """Save model state to Google Drive"""
         logger.info(f"Saving model state to {filename}")
         try:
-            # Create all necessary directories
+            # Create temp directory
             os.makedirs("/tmp", exist_ok=True)
-            os.makedirs(os.path.dirname(os.path.join("/tmp", filename)), exist_ok=True)
-            os.makedirs(self.config.cache_dir, exist_ok=True)
             
             # Save to temporary file
             temp_path = f"/tmp/{filename}"
             if isinstance(state_dict, (dict, bytes)):
-                logger.debug("Saving raw state dict")
                 torch.save(state_dict, temp_path)
             else:
-                logger.debug("Saving model state dict")
                 torch.save(state_dict.state_dict(), temp_path)
             
             # Upload to Google Drive
@@ -122,124 +115,78 @@ class CloudStorage:
                 'name': filename,
                 'parents': [self.drive_folder_id]
             }
-            
-            # Ensure cache directory exists
-            cache_path = os.path.join(self.config.cache_dir, filename)
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            
-            # Copy to cache
-            logger.debug(f"Copying to cache: {cache_path}")
-            with open(temp_path, 'rb') as src, open(cache_path, 'wb') as dst:
-                dst.write(src.read())
                 
-            # Upload to Drive
-            try:
-                # Check if file already exists
-                logger.debug("Checking for existing file in Drive")
-                files = self.drive_service.files().list(
-                    q=f"name='{filename}' and '{self.drive_folder_id}' in parents",
-                    fields="files(id)",
-                    pageSize=1
+            # Check if file exists and update/create accordingly
+            files = self.drive_service.files().list(
+                q=f"name='{filename}' and '{self.drive_folder_id}' in parents",
+                fields="files(id)",
+                pageSize=1
+            ).execute()
+            
+            media = MediaIoBaseUpload(
+                io.BytesIO(open(temp_path, 'rb').read()),
+                mimetype='application/octet-stream',
+                resumable=True
+            )
+            
+            if files.get('files'):
+                # Update existing file
+                file_id = files['files'][0]['id']
+                self.drive_service.files().update(
+                    fileId=file_id,
+                    media_body=media
                 ).execute()
-                
-                if files.get('files'):
-                    # Update existing file
-                    file_id = files['files'][0]['id']
-                    logger.info(f"Updating existing file {file_id}")
-                    media = MediaIoBaseUpload(
-                        io.BytesIO(open(temp_path, 'rb').read()),
-                        mimetype='application/octet-stream',
-                        resumable=True
-                    )
-                    self.drive_service.files().update(
-                        fileId=file_id,
-                        media_body=media
-                    ).execute()
-                else:
-                    # Create new file
-                    logger.info("Creating new file in Drive")
-                    media = MediaIoBaseUpload(
-                        io.BytesIO(open(temp_path, 'rb').read()),
-                        mimetype='application/octet-stream',
-                        resumable=True
-                    )
-                    self.drive_service.files().create(
-                        body=file_metadata,
-                        media_body=media,
-                        fields='id'
-                    ).execute()
-            except Exception as e:
-                logger.warning(f"Error uploading to Google Drive: {e}", exc_info=True)
-                # Continue since we have local cache
+            else:
+                # Create new file
+                self.drive_service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id'
+                ).execute()
             
             os.remove(temp_path)
-            logger.debug("Removed temporary file")
+            
         except Exception as e:
             logger.error(f"Error saving model state: {e}", exc_info=True)
             raise
-    
+
     async def load_model_state(self, filename: str):
-        """Load model state from storage with fallback mechanisms"""
+        """Load model state from Google Drive"""
         try:
-            # Try local cache first
-            cache_path = os.path.join(self.config.cache_dir, filename)
-            if os.path.exists(cache_path):
-                logger.debug(f"Loading from cache: {cache_path}")
-                with torch.serialization.safe_globals(['numpy._core.multiarray._reconstruct']):
-                    return torch.load(cache_path, weights_only=False)
+            logger.debug(f"Searching for file in Drive: {filename}")
+            files = self.drive_service.files().list(
+                q=f"name='{filename}' and '{self.drive_folder_id}' in parents",
+                fields="files(id)",
+                pageSize=1
+            ).execute()
 
-            # Try Google Drive if available
-            if self.drive_service:
-                try:
-                    logger.debug(f"Searching for file in Drive: {filename}")
-                    files = self.drive_service.files().list(
-                        q=f"name='{filename}' and '{self.drive_folder_id}' in parents",
-                        fields="files(id)",
-                        pageSize=1
-                    ).execute()
+            if not files.get('files'):
+                raise FileNotFoundError(f"File {filename} not found in Drive")
 
-                    if not files.get('files'):
-                        raise FileNotFoundError(f"File {filename} not found in Drive")
-
-                    file_id = files['files'][0]['id']
-                    request = self.drive_service.files().get_media(fileId=file_id)
-                    
-                    fh = io.BytesIO()
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    
-                    while not done:
-                        _, done = downloader.next_chunk()
-                    
-                    # Save to local cache and return loaded state
-                    fh.seek(0)
-                    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-                    with torch.serialization.safe_globals(['numpy._core.multiarray._reconstruct']):
-                        state = torch.load(fh, weights_only=False)
-                    torch.save(state, cache_path)
-                    return state
-
-                except Exception as drive_error:
-                    logger.warning(f"Google Drive access failed: {drive_error}")
-                    
-            raise FileNotFoundError(f"Model state {filename} not found in storage")
+            file_id = files['files'][0]['id']
+            request = self.drive_service.files().get_media(fileId=file_id)
+            
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            
+            while not done:
+                _, done = downloader.next_chunk()
+            
+            fh.seek(0)
+            with torch.serialization.safe_globals(['numpy._core.multiarray._reconstruct']):
+                return torch.load(fh, weights_only=False)
                 
         except Exception as e:
             logger.error(f"Error loading model state: {e}")
             raise
-    
-    def _validate_drive_folder(self) -> None:
-        """
-        Validate Google Drive folder exists and is accessible.
-        If folder doesn't exist, creates it. If folder_id is a name, 
-        attempts to find or create the corresponding folder.
-        """
+
+    def _validate_drive_folder(self):
+        """Validate Google Drive folder exists and is accessible"""
         if not self.drive_folder_id:
-            # Create default folder if none specified
             self.drive_folder_id = 'scholarly-data'
             
         try:
-            # First try to find folder by name
             folder_name = self.drive_folder_id.split('#')[0].strip().strip('"\'')
             query = (
                 f"name='{folder_name}' and "
@@ -255,7 +202,6 @@ class CloudStorage:
             ).execute()
             
             if not results.get('files'):
-                # Create the folder if it doesn't exist
                 folder_metadata = {
                     'name': folder_name,
                     'mimeType': 'application/vnd.google-apps.folder'
@@ -266,17 +212,96 @@ class CloudStorage:
                 ).execute()
                 self.drive_folder_id = folder.get('id')
                 print(f"Created new storage folder: {folder_name} ({self.drive_folder_id})")
+                self._initialize_required_files()
             else:
                 self.drive_folder_id = results['files'][0]['id']
                 print(f"Using existing storage folder: {folder_name} ({self.drive_folder_id})")
+                self._initialize_required_files()
                 
         except Exception as e:
-            print(f"Warning: Error validating Google Drive folder: {e}")
-            # Create local cache directory as fallback
-            os.makedirs(self.config.cache_dir, exist_ok=True)
-            print(f"Using local cache directory: {self.config.cache_dir}")
+            raise RuntimeError(f"Error validating Google Drive folder: {e}")
+
+    def _initialize_required_files(self) -> None:
+        """Initialize required system files in Google Drive if they don't exist"""
+        required_files = {
+            'model_registry.json': {},
+            'vector_store_versions.json': {},
+            'hash_mappings.pkl': {},
+            'vector_index.pkl': {'trained': False, 'vectors': None}
+        }
+
+        for filename, initial_state in required_files.items():
+            try:
+                files = self.drive_service.files().list(
+                    q=f"name='{filename}' and '{self.drive_folder_id}' in parents",
+                    pageSize=1
+                ).execute()
+                
+                if not files.get('files'):
+                    logger.debug(f"Creating file in Drive: {filename}")
+                    asyncio.create_task(self.save_model_state(initial_state, filename))
+            except Exception as e:
+                logger.error(f"Error initializing {filename}: {e}")
+                raise
 
     def _looks_like_drive_id(self, value: str) -> bool:
         """Check if string matches typical Google Drive ID format"""
         logger.debug(f"Checking if '{value}' looks like a Drive ID")
         return len(value) > 25 and all(c.isalnum() or c == '_' or c == '-' for c in value)
+
+    async def save_versioned_state(
+        self,
+        state_dict,
+        version: str,
+        metadata: Dict,
+        prefix: str = ""
+    ) -> str:
+        """Save versioned state with metadata"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{prefix}_v{version}_{timestamp}.pt"
+        
+        # Save state with version metadata
+        versioned_state = {
+            'state': state_dict,
+            'version': version,
+            'timestamp': timestamp,
+            'metadata': metadata
+        }
+        
+        await self.save_model_state(versioned_state, filename)
+        
+        # Save version registry entry
+        registry_file = f"{prefix}_version_registry.json"
+        try:
+            registry = await self.load_model_state(registry_file)
+        except FileNotFoundError:
+            registry = {}
+            
+        registry[version] = {
+            'filename': filename,
+            'timestamp': timestamp,
+            'metadata': metadata
+        }
+        
+        await self.save_model_state(registry, registry_file)
+        return filename
+
+    async def load_versioned_state(
+        self,
+        version: str,
+        prefix: str = ""
+    ) -> Optional[Dict]:
+        """Load specific version of state"""
+        registry_file = f"{prefix}_version_registry.json"
+        
+        try:
+            registry = await self.load_model_state(registry_file)
+            if version not in registry:
+                return None
+                
+            version_info = registry[version]
+            state = await self.load_model_state(version_info['filename'])
+            return state.get('state')
+            
+        except FileNotFoundError:
+            return None

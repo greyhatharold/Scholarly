@@ -21,8 +21,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # Add error handling and upgrade pip with verbose output
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch nightly build with CUDA support for Python 3.13
-RUN pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu117
+# Install PyTorch stable version
+RUN pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu117
 
 # Then install remaining requirements
 COPY requirements.txt .

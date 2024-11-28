@@ -12,6 +12,8 @@ from src.config.config import Config
 import asyncio
 import os
 import logging
+from datetime import datetime
+from src.data.versioning.model_version_manager import ModelVersionManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,11 @@ class DataManager:
         self.storage = CloudStorage(config)
         self.compressor = VectorCompressor(config.vector_store)
         self.index = VectorIndex(config.vector_store)
-        asyncio.create_task(self._initialize_storage())
+        self.version_registry = {}  # Track vector store versions
+        
+        # Add version manager integration
+        self.version_manager = ModelVersionManager(config)
+        asyncio.create_task(self.version_manager.initialize())
         
     async def _initialize_storage(self):
         """Initialize or load index from cloud storage"""
@@ -123,6 +129,15 @@ class DataManager:
                 # Update hash mappings
                 await self._store_hash_mapping(content_hash, vector_id)
                 logger.debug("Successfully stored vectors and updated index")
+                
+                # Add version tracking for vector store
+                version_info = {
+                    'timestamp': time.time(),
+                    'vector_count': len(vectors),
+                    'index_state': self.index.get_state()
+                }
+                self.version_registry[vector_id] = version_info
+                await self._save_version_registry()
                 
                 return vector_id
                 
@@ -230,3 +245,46 @@ class DataManager:
         index_state = self.index.get_state()
         await self.storage.save_model_state(index_state, 'vector_index.pkl')
         logger.debug("Successfully saved index state")
+
+    async def _save_version_registry(self):
+        """Save vector store version registry"""
+        await self.storage.save_model_state(
+            self.version_registry,
+            'vector_store_versions.json'
+        )
+
+    async def restore_vector_store_version(self, version_id: int):
+        """Restore vector store to specific version"""
+        if version_id not in self.version_registry:
+            raise ValueError(f"Version {version_id} not found")
+            
+        version_info = self.version_registry[version_id]
+        self.index.load_state(version_info['index_state'])
+        await self._save_index()
+
+    async def store_vectors_with_version(
+        self,
+        vectors: np.ndarray,
+        version: str,
+        metadata: Optional[Dict] = None
+    ) -> Optional[int]:
+        """Store vectors with version tracking"""
+        vector_id = await self.store_vectors(vectors, metadata)
+        
+        if vector_id:
+            # Create version info
+            version_info = {
+                'vector_id': vector_id,
+                'timestamp': datetime.now(),
+                'version': version,
+                'metadata': metadata
+            }
+            
+            # Register version with version manager
+            await self.version_manager.save_version_with_vectors(
+                version=version,
+                vector_store_id=vector_id,
+                metadata=version_info
+            )
+            
+        return vector_id
