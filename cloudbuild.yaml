@@ -6,10 +6,15 @@ steps:
          '-f', 'docker/training.Dockerfile',
          '--build-arg', 'BUILDKIT_PROGRESS=plain',  # Better logging
          '--no-cache',  # Ensure fresh build
+         '--network=host',  # Added for better network stability
+         '--memory=4g',     # Added resource limits
+         '--cpu-quota=100000',
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
   id: 'build-training'
   waitFor: ['-']  # Start immediately
+  timeout: '1800s'    # Added timeout
+  retryable: true     # Added retry capability
 
 # Build the serving image with retries
 - name: 'gcr.io/cloud-builders/docker'
@@ -18,10 +23,15 @@ steps:
          '-f', 'docker/serving.Dockerfile',
          '--build-arg', 'BUILDKIT_PROGRESS=plain',  # Better logging
          '--no-cache',  # Ensure fresh build
+         '--network=host',  # Added for better network stability
+         '--memory=4g',     # Added resource limits
+         '--cpu-quota=100000',
          '.']
   secretEnv: ['GOOGLE_CREDENTIALS']
   id: 'build-serving'
   waitFor: ['-']  # Start immediately
+  timeout: '1800s'    # Added timeout
+  retryable: true     # Added retry capability
 
 # Push training image
 - name: 'gcr.io/cloud-builders/docker'
